@@ -262,6 +262,155 @@ TOOLS = [
     }
 ]
 
+# ---------------------------------------------------------------------------
+# Extra tools that proxy to the Flask routes in capcut_server.py
+# (called in-process via Flask's test client; no HTTP server needed)
+# ---------------------------------------------------------------------------
+
+_LIST_FILTER_PROPS = {
+    "search": {"type": "string", "description": "Only return names containing this text (case-insensitive)"},
+    "limit": {"type": "integer", "description": "Maximum number of items to return (default: all)"}
+}
+
+# tool name -> (route, http method, description)
+_TYPE_LIST_TOOLS = {
+    "get_intro_animation_types": ("/get_intro_animation_types", "List valid intro (entrance) animation names for video/image (use in add_image intro_animation)"),
+    "get_outro_animation_types": ("/get_outro_animation_types", "List valid outro (exit) animation names for video/image (use in add_image outro_animation)"),
+    "get_combo_animation_types": ("/get_combo_animation_types", "List valid combo (group) animation names for video/image"),
+    "get_transition_types": ("/get_transition_types", "List valid transition names (use in add_video/add_image transition)"),
+    "get_mask_types": ("/get_mask_types", "List valid mask names (use in add_video/add_image mask_type)"),
+    "get_audio_effect_types": ("/get_audio_effect_types", "List valid audio effect names with their parameters"),
+    "get_font_types": ("/get_font_types", "List valid font names (use in add_text/add_subtitle font)"),
+    "get_text_intro_types": ("/get_text_intro_types", "List valid text intro animation names"),
+    "get_text_outro_types": ("/get_text_outro_types", "List valid text outro animation names"),
+    "get_text_loop_anim_types": ("/get_text_loop_anim_types", "List valid text loop animation names"),
+    "get_video_scene_effect_types": ("/get_video_scene_effect_types", "List valid scene effect names (use in add_effect with effect_category='scene')"),
+    "get_video_character_effect_types": ("/get_video_character_effect_types", "List valid character effect names (use in add_effect with effect_category='character')"),
+}
+
+for _name, (_route, _desc) in _TYPE_LIST_TOOLS.items():
+    TOOLS.append({
+        "name": _name,
+        "description": _desc,
+        "inputSchema": {"type": "object", "properties": dict(_LIST_FILTER_PROPS)}
+    })
+
+TOOLS.extend([
+    {
+        "name": "query_script",
+        "description": "Return the full JSON content of a draft (tracks, segments, materials, timing)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID"},
+                "force_update": {"type": "boolean", "default": True, "description": "Recompute the script before returning it"}
+            },
+            "required": ["draft_id"]
+        }
+    },
+    {
+        "name": "query_draft_status",
+        "description": "Check the status of a draft save task",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "Task ID (usually the draft ID)"}
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "generate_draft_url",
+        "description": "Generate a preview/download URL for a draft",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID"},
+                "draft_folder": {"type": "string", "description": "Draft folder (optional)"}
+            },
+            "required": ["draft_id"]
+        }
+    },
+    {
+        "name": "list_projects",
+        "description": "List projects in the local CapCut desktop drafts folder, newest first",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "read_project",
+        "description": "Read a summary (duration, fps, canvas, tracks, materials) of an existing CapCut desktop project",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_name": {"type": "string", "description": "Project folder name (from list_projects) or absolute path"}
+            },
+            "required": ["project_name"]
+        }
+    },
+    {
+        "name": "reload_desktop",
+        "description": "Ask CapCut desktop to reload so newly saved drafts appear",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_name": {"type": "string", "description": "Project to open after reload (optional)"}
+            }
+        }
+    },
+])
+
+# tool name -> (route, http method)
+_ROUTE_TOOLS = {name: (route, "GET") for name, (route, _d) in _TYPE_LIST_TOOLS.items()}
+_ROUTE_TOOLS.update({
+    "query_script": ("/query_script", "POST"),
+    "query_draft_status": ("/query_draft_status", "POST"),
+    "generate_draft_url": ("/generate_draft_url", "POST"),
+    "list_projects": ("/list_projects", "GET"),
+    "read_project": ("/read_project", "POST"),
+    "reload_desktop": ("/reload_desktop", "POST"),
+})
+
+_flask_client = None
+
+def _call_route(tool_name: str, arguments: Dict[str, Any]) -> Any:
+    """Call a capcut_server.py Flask route in-process and return its output."""
+    global _flask_client
+    if _flask_client is None:
+        from capcut_server import app as flask_app  # lazy: heavy import
+        _flask_client = flask_app.test_client()
+
+    route, method = _ROUTE_TOOLS[tool_name]
+    args = dict(arguments)
+    search = args.pop("search", None)
+    limit = args.pop("limit", None)
+
+    if method == "GET":
+        resp = _flask_client.get(route)
+    else:
+        resp = _flask_client.post(route, json=args)
+    data = resp.get_json(silent=True)
+    if data is None:
+        raise RuntimeError(f"{route} returned HTTP {resp.status_code} with non-JSON body")
+    if not data.get("success", False):
+        raise RuntimeError(data.get("error") or f"{route} failed")
+
+    output = data.get("output")
+    if tool_name == "query_script" and isinstance(output, str):
+        try:
+            output = json.loads(output)
+        except ValueError:
+            pass
+    if isinstance(output, list):
+        if search:
+            needle = search.lower()
+            output = [o for o in output
+                      if needle in str(o.get("name", o) if isinstance(o, dict) else o).lower()]
+        total = len(output)
+        if limit:
+            output = output[:int(limit)]
+        return {"total": total, "returned": len(output), "items": output}
+    return output
+
 @contextlib.contextmanager
 def capture_stdout():
     """捕获标准输出，防止CapCut API的调试信息干扰JSON响应"""
@@ -356,7 +505,10 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                     result = {"draft_url": save_result["draft_url"]}
                 else:
                     result = {"draft_url": f"https://www.install-ai-guider.top/draft/downloader?draft_id=unknown"}
-                
+
+            elif tool_name in _ROUTE_TOOLS:
+                result = _call_route(tool_name, arguments)
+
             else:
                 return {"success": False, "error": f"Unknown tool: {tool_name}"}
         
@@ -452,7 +604,7 @@ def main():
     """主函数"""
     print("🚀 Starting CapCut API MCP Server (Complete Version)...", file=sys.stderr)
     print(f"📋 Available tools: {len(TOOLS)} tools loaded", file=sys.stderr)
-    print("✨ Features: 视频、音频、图片、文本、字幕、特效、贴纸、关键帧", file=sys.stderr)
+    print("✨ Features: 视频、音频、图片、文本、字幕、特效、贴纸、关键帧、类型列表、项目管理", file=sys.stderr)
     print("🔌 Waiting for client connections...", file=sys.stderr)
     
     try:
