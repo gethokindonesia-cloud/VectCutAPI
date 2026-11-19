@@ -81,6 +81,12 @@ TOOLS = [
                 "mask_rect_width": {"type": "number", "description": "Rectangle mask width as a proportion of material width (rectangle mask only)"},
                 "mask_round_corner": {"type": "number", "description": "Rectangle mask corner rounding, 0-100 (rectangle mask only)"},
                 "background_blur": {"type": "integer", "description": "背景模糊级别(1-4)"},
+                "background_color": {"type": "string", "description": "Solid background fill '#RRGGBB' or '#RRGGBBAA' (bottom video track only; not with background_blur)"},
+                "filter_type": {"type": "string", "description": "Filter applied to this clip only (see get_filter_types)"},
+                "filter_intensity": {"type": "number", "default": 100.0, "description": "Clip filter strength 0-100"},
+                "effect_type": {"type": "string", "description": "Video effect applied to this clip only (see get_video_scene_effect_types / get_video_character_effect_types)"},
+                "effect_category": {"type": "string", "enum": ["scene", "character"], "default": "scene", "description": "Category effect_type is looked up in"},
+                "effect_params": {"type": "array", "items": {"type": ["number", "null"]}, "description": "Clip effect parameter values"},
                 "relative_index": {"type": "integer", "default": 0, "description": "Track rendering order index"},
                 "duration": {"type": "number", "description": "Known source duration in seconds (skips duration detection)"},
                 "draft_folder": {"type": "string", "description": "Draft folder path (optional)"}
@@ -105,6 +111,8 @@ TOOLS = [
                 "effect_type": {"type": "string", "description": "Audio effect name (see get_audio_effect_types)"},
                 "effect_params": {"type": "array", "items": {"type": ["number", "null"]}, "description": "Parameter values for effect_type, in the order listed by get_audio_effect_types"},
                 "sound_effects": {"type": "array", "description": "Several audio effects: list of [effect_name, [params...]] pairs"},
+                "fade_in": {"type": "number", "default": 0.0, "description": "Fade-in length (seconds)"},
+                "fade_out": {"type": "number", "default": 0.0, "description": "Fade-out length (seconds)"},
                 "duration": {"type": "number", "description": "Known source duration in seconds (skips duration detection)"},
                 "draft_folder": {"type": "string", "description": "Draft folder path (optional)"},
                 "width": {"type": "integer", "default": 1080, "description": "视频宽度"},
@@ -150,6 +158,12 @@ TOOLS = [
                 "mask_rect_width": {"type": "number", "description": "Rectangle mask width as a proportion of material width (rectangle mask only)"},
                 "mask_round_corner": {"type": "number", "description": "Rectangle mask corner rounding, 0-100 (rectangle mask only)"},
                 "background_blur": {"type": "integer", "description": "Background blur level 1-4"},
+                "background_color": {"type": "string", "description": "Solid background fill '#RRGGBB' or '#RRGGBBAA' (bottom video track only; not with background_blur)"},
+                "filter_type": {"type": "string", "description": "Filter applied to this clip only (see get_filter_types)"},
+                "filter_intensity": {"type": "number", "default": 100.0, "description": "Clip filter strength 0-100"},
+                "effect_type": {"type": "string", "description": "Video effect applied to this clip only (see get_video_scene_effect_types / get_video_character_effect_types)"},
+                "effect_category": {"type": "string", "enum": ["scene", "character"], "default": "scene", "description": "Category effect_type is looked up in"},
+                "effect_params": {"type": "array", "items": {"type": ["number", "null"]}, "description": "Clip effect parameter values"},
                 "relative_index": {"type": "integer", "default": 0, "description": "Track rendering order index"},
                 "draft_folder": {"type": "string", "description": "Draft folder path (optional)"}
             },
@@ -440,9 +454,80 @@ TOOLS.extend([
         "inputSchema": {
             "type": "object",
             "properties": {
-                "project_name": {"type": "string", "description": "Project folder name (from list_projects) or absolute path"}
+                "project_name": {"type": "string", "description": "Project folder name (from list_projects) or absolute path"},
+                "timeline": {"type": "string", "description": "Timeline name or ID (default: main timeline)"}
             },
             "required": ["project_name"]
+        }
+    },
+    {
+        "name": "open_project",
+        "description": "Open an existing CapCut project for editing. Returns a draft_id that works with the add_* tools, replace_text and replace_material, plus its tracks, text segments and media names. Save the result with save_project (the original is never changed).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_name": {"type": "string", "description": "Project folder name (from list_projects) or absolute path"},
+                "timeline": {"type": "string", "description": "Timeline name or ID for multi-timeline projects (default: main timeline)"},
+                "include_texts": {"type": "boolean", "default": True, "description": "List text segments for replace_text"},
+                "text_limit": {"type": "integer", "default": 300, "description": "Maximum number of text segments to list"}
+            },
+            "required": ["project_name"]
+        }
+    },
+    {
+        "name": "replace_text",
+        "description": "Change the words of one text segment in a project opened with open_project, keeping its font, style and animation",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID from open_project"},
+                "track_index": {"type": "integer", "default": 0, "description": "Text track index (from open_project texts)"},
+                "segment_index": {"type": "integer", "description": "Segment index (from open_project texts)"},
+                "text": {"type": ["string", "array"], "description": "New text; for a text template, a list with one string per part"},
+                "recalc_style": {"type": "boolean", "default": True, "description": "Stretch per-character styles to the new length"}
+            },
+            "required": ["draft_id", "segment_index", "text"]
+        }
+    },
+    {
+        "name": "replace_material",
+        "description": "Swap a video, photo or audio file in a project opened with open_project, everywhere it is used. Clip lengths and trims stay the same, so use a file at least as long as the old one.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID from open_project"},
+                "material_name": {"type": "string", "description": "Current media name (from open_project video_materials / audio_materials)"},
+                "new_media": {"type": "string", "description": "Local file path or URL of the replacement"}
+            },
+            "required": ["draft_id", "material_name", "new_media"]
+        }
+    },
+    {
+        "name": "save_project",
+        "description": "Save a project opened with open_project as a NEW CapCut project (copies the original folder, then writes the edits). The original project is not modified.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID from open_project"},
+                "new_project_name": {"type": "string", "description": "Folder name for the new project; must not exist yet"}
+            },
+            "required": ["draft_id", "new_project_name"]
+        }
+    },
+    {
+        "name": "add_audio_keyframe",
+        "description": "Add volume keyframes to an audio track, e.g. lower music under a voice-over. Applied when the draft is saved.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID"},
+                "track_name": {"type": "string", "default": "audio_main", "description": "Audio track name"},
+                "time": {"type": "number", "default": 0.0, "description": "Keyframe time on the timeline (seconds)"},
+                "volume": {"type": ["number", "string"], "default": 1.0, "description": "Volume at that time: 1.0 or \"100%\" = original, 0.3 = 30%, 0 = mute"},
+                "times": {"type": "array", "items": {"type": "number"}, "description": "Batch mode: list of times (seconds)"},
+                "volumes": {"type": "array", "items": {"type": ["number", "string"]}, "description": "Batch mode: list of volumes, same length as times"}
+            },
+            "required": ["draft_id"]
         }
     },
     {
@@ -466,6 +551,11 @@ _ROUTE_TOOLS.update({
     "list_projects": ("/list_projects", "GET"),
     "read_project": ("/read_project", "POST"),
     "reload_desktop": ("/reload_desktop", "POST"),
+    "open_project": ("/open_project", "POST"),
+    "replace_text": ("/replace_text", "POST"),
+    "replace_material": ("/replace_material", "POST"),
+    "save_project": ("/save_project", "POST"),
+    "add_audio_keyframe": ("/add_audio_keyframe", "POST"),
 })
 
 _flask_client = None
@@ -610,6 +700,8 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 
             elif tool_name == "save_draft":
                 save_result = save_draft_impl(**arguments)
+                if isinstance(save_result, dict) and save_result.get("success") is False:
+                    raise RuntimeError(save_result.get("error") or "save_draft failed")
                 if isinstance(save_result, dict) and "draft_url" in save_result:
                     result = {"draft_url": save_result["draft_url"]}
                 else:

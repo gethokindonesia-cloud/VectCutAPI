@@ -4,7 +4,8 @@ import time
 from settings.local import IS_CAPCUT_ENV
 from util import generate_draft_url, url_to_hash, build_draft_asset_path
 from pyJianYingDraft import trange, Clip_settings
-from typing import Optional, Dict
+from typing import Optional, Dict, List
+from segment_extras import apply_segment_extras
 from pyJianYingDraft import exceptions
 from create_draft import get_or_create_draft
 
@@ -42,7 +43,13 @@ def add_image_impl(
     mask_invert: bool = False,  # Whether to invert the mask
     mask_rect_width: Optional[float] = None,  # Rectangle mask width (rectangle mask only)
     mask_round_corner: Optional[float] = None,  # Rectangle mask rounded corner (rectangle mask only, 0-100)
-    background_blur: Optional[int] = None  # Background blur level, 1-4, corresponding to four blur intensity levels
+    background_blur: Optional[int] = None,  # Background blur level, 1-4, corresponding to four blur intensity levels
+    background_color: Optional[str] = None,  # Solid background fill color '#RRGGBB' or '#RRGGBBAA'
+    filter_type: Optional[str] = None,  # Filter applied to this clip only
+    filter_intensity: float = 100.0,  # Filter strength 0-100
+    effect_type: Optional[str] = None,  # Video effect applied to this clip only
+    effect_category: str = "scene",  # "scene" or "character"
+    effect_params: Optional[List[Optional[float]]] = None  # Effect parameter list
 ) -> Dict[str, str]:
     """
     Add an image track to the specified draft
@@ -79,6 +86,12 @@ def add_image_impl(
     :param mask_rect_width: Rectangle mask width, only allowed when mask type is rectangle, represented as a proportion of material width
     :param mask_round_corner: Rectangle mask rounded corner parameter, only allowed when mask type is rectangle, range 0~100
     :param background_blur: Background blur level, 1-4, corresponding to four blur intensity levels (0.0625, 0.375, 0.75, 1.0)
+    :param background_color: Solid background fill color '#RRGGBB' or '#RRGGBBAA' (not together with background_blur)
+    :param filter_type: Filter name applied to this clip only (see get_filter_types)
+    :param filter_intensity: Filter strength 0-100, default 100
+    :param effect_type: Video effect name applied to this clip only
+    :param effect_category: Effect category, "scene" or "character", default "scene"
+    :param effect_params: Effect parameter list
     :return: Updated draft information, including draft_id and draft_url
     """
     # Get or create draft
@@ -228,7 +241,11 @@ def add_image_impl(
         
         # Add background blur effect
         image_segment.add_background_filling("blur", blur=blur_levels[background_blur])
-    
+
+    # Per-clip background color, filter and effect
+    apply_segment_extras(image_segment, background_blur is not None, background_color,
+                         filter_type, filter_intensity, effect_type, effect_category, effect_params)
+
     # Add image segment to track
     script.add_segment(image_segment, track_name=track_name)
     

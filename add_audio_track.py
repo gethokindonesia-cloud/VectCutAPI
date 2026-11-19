@@ -20,7 +20,9 @@ def add_audio_track(
     sound_effects: Optional[List[Tuple[str, Optional[List[Optional[float]]]]]]=None,
     width: int = 1080,
     height: int = 1920,
-    duration: Optional[float] = None  # Added duration parameter
+    duration: Optional[float] = None,  # Added duration parameter
+    fade_in: float = 0.0,  # Fade-in length (seconds)
+    fade_out: float = 0.0  # Fade-out length (seconds)
 ) -> Dict[str, str]:
     """
     Add an audio track to the specified draft
@@ -34,6 +36,8 @@ def add_audio_track(
     :param track_name: Track name, default "audio_main"
     :param speed: Playback speed, default 1.0
     :param sound_effects: Scene sound effect list, each element is a tuple containing effect type name and parameter list, default None
+    :param fade_in: Fade-in length (seconds), default 0 (no fade)
+    :param fade_out: Fade-out length (seconds), default 0 (no fade)
     :return: Updated draft information
     """
     # Get or create draft
@@ -142,6 +146,12 @@ def add_audio_track(
             else:
                 print(f"Warning: Audio effect named {effect_name} not found")
     
+    # Add fade in/out
+    if fade_in or fade_out:
+        if fade_in < 0 or fade_out < 0:
+            raise ValueError("fade_in and fade_out must not be negative")
+        audio_segment.add_fade(int(fade_in * 1000000), int(fade_out * 1000000))
+
     # Add audio segment to track
     script.add_segment(audio_segment, track_name=track_name)
     
