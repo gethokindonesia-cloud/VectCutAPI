@@ -26,6 +26,7 @@ try:
     from add_subtitle_impl import add_subtitle_impl
     from add_effect_impl import add_effect_impl
     from add_sticker_impl import add_sticker_impl
+    from add_filter_impl import add_filter_impl
     from add_video_keyframe_impl import add_video_keyframe_impl
     from get_duration_impl import get_video_duration
     from save_draft_impl import save_draft_impl
@@ -71,7 +72,18 @@ TOOLS = [
                 "transition": {"type": "string", "description": "转场类型"},
                 "transition_duration": {"type": "number", "default": 0.5, "description": "转场时长"},
                 "mask_type": {"type": "string", "description": "蒙版类型"},
-                "background_blur": {"type": "integer", "description": "背景模糊级别(1-4)"}
+                "mask_center_x": {"type": "number", "default": 0.5, "description": "Mask center X (0-1)"},
+                "mask_center_y": {"type": "number", "default": 0.5, "description": "Mask center Y (0-1)"},
+                "mask_size": {"type": "number", "default": 1.0, "description": "Mask size (0-1)"},
+                "mask_rotation": {"type": "number", "default": 0.0, "description": "Mask rotation (degrees)"},
+                "mask_feather": {"type": "number", "default": 0.0, "description": "Mask feather (0-1)"},
+                "mask_invert": {"type": "boolean", "default": False, "description": "Invert the mask"},
+                "mask_rect_width": {"type": "number", "description": "Rectangle mask width as a proportion of material width (rectangle mask only)"},
+                "mask_round_corner": {"type": "number", "description": "Rectangle mask corner rounding, 0-100 (rectangle mask only)"},
+                "background_blur": {"type": "integer", "description": "背景模糊级别(1-4)"},
+                "relative_index": {"type": "integer", "default": 0, "description": "Track rendering order index"},
+                "duration": {"type": "number", "description": "Known source duration in seconds (skips duration detection)"},
+                "draft_folder": {"type": "string", "description": "Draft folder path (optional)"}
             },
             "required": ["video_url"]
         }
@@ -90,6 +102,11 @@ TOOLS = [
                 "volume": {"type": "number", "default": 1.0, "description": "音量"},
                 "speed": {"type": "number", "default": 1.0, "description": "播放速度"},
                 "track_name": {"type": "string", "default": "audio_main", "description": "轨道名称"},
+                "effect_type": {"type": "string", "description": "Audio effect name (see get_audio_effect_types)"},
+                "effect_params": {"type": "array", "items": {"type": ["number", "null"]}, "description": "Parameter values for effect_type, in the order listed by get_audio_effect_types"},
+                "sound_effects": {"type": "array", "description": "Several audio effects: list of [effect_name, [params...]] pairs"},
+                "duration": {"type": "number", "description": "Known source duration in seconds (skips duration detection)"},
+                "draft_folder": {"type": "string", "description": "Draft folder path (optional)"},
                 "width": {"type": "integer", "default": 1080, "description": "视频宽度"},
                 "height": {"type": "integer", "default": 1920, "description": "视频高度"}
             },
@@ -114,9 +131,27 @@ TOOLS = [
                 "scale_y": {"type": "number", "default": 1, "description": "Y轴缩放"},
                 "track_name": {"type": "string", "default": "main", "description": "轨道名称"},
                 "intro_animation": {"type": "string", "description": "入场动画"},
+                "intro_animation_duration": {"type": "number", "default": 0.5, "description": "Intro animation duration (seconds)"},
                 "outro_animation": {"type": "string", "description": "出场动画"},
+                "outro_animation_duration": {"type": "number", "default": 0.5, "description": "Outro animation duration (seconds)"},
+                "combo_animation": {"type": "string", "description": "Combo animation (see get_combo_animation_types)"},
+                "combo_animation_duration": {"type": "number", "default": 0.5, "description": "Combo animation duration (seconds)"},
+                "animation": {"type": "string", "description": "Legacy intro animation name (intro_animation takes priority)"},
+                "animation_duration": {"type": "number", "default": 0.5, "description": "Legacy intro animation duration (seconds)"},
                 "transition": {"type": "string", "description": "转场类型"},
-                "mask_type": {"type": "string", "description": "蒙版类型"}
+                "transition_duration": {"type": "number", "default": 0.5, "description": "Transition duration (seconds)"},
+                "mask_type": {"type": "string", "description": "蒙版类型"},
+                "mask_center_x": {"type": "number", "default": 0.0, "description": "Mask center X (material pixels; 0 = center)"},
+                "mask_center_y": {"type": "number", "default": 0.0, "description": "Mask center Y (material pixels; 0 = center)"},
+                "mask_size": {"type": "number", "default": 0.5, "description": "Mask size as a proportion of material height"},
+                "mask_rotation": {"type": "number", "default": 0.0, "description": "Mask rotation (degrees, clockwise)"},
+                "mask_feather": {"type": "number", "default": 0.0, "description": "Mask feather, 0-100"},
+                "mask_invert": {"type": "boolean", "default": False, "description": "Invert the mask"},
+                "mask_rect_width": {"type": "number", "description": "Rectangle mask width as a proportion of material width (rectangle mask only)"},
+                "mask_round_corner": {"type": "number", "description": "Rectangle mask corner rounding, 0-100 (rectangle mask only)"},
+                "background_blur": {"type": "integer", "description": "Background blur level 1-4"},
+                "relative_index": {"type": "integer", "default": 0, "description": "Track rendering order index"},
+                "draft_folder": {"type": "string", "description": "Draft folder path (optional)"}
             },
             "required": ["image_url"]
         }
@@ -131,18 +166,49 @@ TOOLS = [
                 "start": {"type": "number", "description": "开始时间（秒）"},
                 "end": {"type": "number", "description": "结束时间（秒）"},
                 "draft_id": {"type": "string", "description": "草稿ID"},
+                "track_name": {"type": "string", "default": "text_main", "description": "Track name"},
+                "transform_x": {"type": "number", "default": 0, "description": "X position"},
+                "transform_y": {"type": "number", "default": -0.8, "description": "Y position (-0.8 = near bottom)"},
+                "width": {"type": "integer", "default": 1080, "description": "Canvas width"},
+                "height": {"type": "integer", "default": 1920, "description": "Canvas height"},
+                "font": {"type": "string", "description": "Font name (see get_font_types)"},
                 "font_color": {"type": "string", "default": "#ffffff", "description": "字体颜色"},
-                "font_size": {"type": "integer", "default": 24, "description": "字体大小"},
+                "font_size": {"type": "number", "default": 8.0, "description": "字体大小"},
+                "font_alpha": {"type": "number", "default": 1.0, "description": "Text opacity (0-1)"},
+                "bold": {"type": "boolean", "default": False, "description": "Bold"},
+                "italic": {"type": "boolean", "default": False, "description": "Italic"},
+                "underline": {"type": "boolean", "default": False, "description": "Underline"},
+                "vertical": {"type": "boolean", "default": False, "description": "Vertical text"},
+                "align": {"type": "integer", "enum": [0, 1, 2], "default": 1, "description": "Alignment: 0 left, 1 center, 2 right"},
+                "line_spacing": {"type": "number", "default": 0.25, "description": "Line spacing"},
+                "letter_spacing": {"type": "number", "default": 0.0, "description": "Letter spacing"},
+                "fixed_width": {"type": "number", "default": -1, "description": "Fixed text box width ratio 0-1 (-1 = auto)"},
+                "fixed_height": {"type": "number", "default": -1, "description": "Fixed text box height ratio 0-1 (-1 = auto)"},
+                "border_color": {"type": "string", "default": "#000000", "description": "Outline color"},
+                "border_width": {"type": "number", "default": 0.0, "description": "Outline width (0 = none)"},
+                "border_alpha": {"type": "number", "default": 1.0, "description": "Outline opacity (0-1)"},
                 "shadow_enabled": {"type": "boolean", "default": False, "description": "是否启用文字阴影"},
                 "shadow_color": {"type": "string", "default": "#000000", "description": "阴影颜色"},
-                "shadow_alpha": {"type": "number", "default": 0.8, "description": "阴影透明度"},
-                "shadow_angle": {"type": "number", "default": 315.0, "description": "阴影角度"},
+                "shadow_alpha": {"type": "number", "default": 0.9, "description": "阴影透明度"},
+                "shadow_angle": {"type": "number", "default": -45.0, "description": "阴影角度"},
                 "shadow_distance": {"type": "number", "default": 5.0, "description": "阴影距离"},
-                "shadow_smoothing": {"type": "number", "default": 0.0, "description": "阴影平滑度"},
-                "background_color": {"type": "string", "description": "背景颜色"},
-                "background_alpha": {"type": "number", "default": 1.0, "description": "背景透明度"},
-                "background_style": {"type": "integer", "default": 0, "description": "背景样式"},
+                "shadow_smoothing": {"type": "number", "default": 0.15, "description": "阴影平滑度"},
+                "background_color": {"type": "string", "default": "#000000", "description": "背景颜色"},
+                "background_alpha": {"type": "number", "default": 0.0, "description": "背景透明度 (0 = no background)"},
+                "background_style": {"type": "integer", "default": 1, "description": "背景样式"},
                 "background_round_radius": {"type": "number", "default": 0.0, "description": "背景圆角半径"},
+                "background_width": {"type": "number", "default": 0.14, "description": "Background width"},
+                "background_height": {"type": "number", "default": 0.14, "description": "Background height"},
+                "background_horizontal_offset": {"type": "number", "default": 0.5, "description": "Background horizontal offset (0-1)"},
+                "background_vertical_offset": {"type": "number", "default": 0.5, "description": "Background vertical offset (0-1)"},
+                "intro_animation": {"type": "string", "description": "Text intro animation (see get_text_intro_types)"},
+                "intro_duration": {"type": "number", "default": 0.5, "description": "Intro animation duration (seconds)"},
+                "outro_animation": {"type": "string", "description": "Text outro animation (see get_text_outro_types)"},
+                "outro_duration": {"type": "number", "default": 0.5, "description": "Outro animation duration (seconds)"},
+                "loop_animation": {"type": "string", "description": "Text loop animation (see get_text_loop_anim_types); fills the time between intro and outro"},
+                "bubble_effect_id": {"type": "string", "description": "Text bubble effect ID (needs bubble_resource_id)"},
+                "bubble_resource_id": {"type": "string", "description": "Text bubble resource ID (needs bubble_effect_id)"},
+                "effect_effect_id": {"type": "string", "description": "Text effect (flower word) ID"},
                 "text_styles": {"type": "array", "description": "文本多样式配置列表"}
             },
             "required": ["text", "start", "end"]
@@ -166,10 +232,20 @@ TOOLS = [
                 "underline": {"type": "boolean", "default": False, "description": "是否下划线"},
                 "border_width": {"type": "number", "default": 0.0, "description": "边框宽度"},
                 "border_color": {"type": "string", "default": "#000000", "description": "边框颜色"},
+                "border_alpha": {"type": "number", "default": 1.0, "description": "Outline opacity (0-1)"},
                 "background_color": {"type": "string", "default": "#000000", "description": "背景颜色"},
                 "background_alpha": {"type": "number", "default": 0.0, "description": "背景透明度"},
+                "background_style": {"type": "integer", "default": 1, "description": "Background style"},
+                "bubble_effect_id": {"type": "string", "description": "Text bubble effect ID (needs bubble_resource_id)"},
+                "bubble_resource_id": {"type": "string", "description": "Text bubble resource ID (needs bubble_effect_id)"},
+                "effect_effect_id": {"type": "string", "description": "Text effect (flower word) ID"},
                 "transform_x": {"type": "number", "default": 0.0, "description": "X轴位置"},
                 "transform_y": {"type": "number", "default": -0.8, "description": "Y轴位置"},
+                "scale_x": {"type": "number", "default": 1.0, "description": "X scale"},
+                "scale_y": {"type": "number", "default": 1.0, "description": "Y scale"},
+                "rotation": {"type": "number", "default": 0.0, "description": "Rotation (degrees)"},
+                "alpha": {"type": "number", "default": 0.4, "description": "Subtitle opacity (0-1)"},
+                "vertical": {"type": "boolean", "default": True, "description": "Vertical text"},
                 "width": {"type": "integer", "default": 1080, "description": "视频宽度"},
                 "height": {"type": "integer", "default": 1920, "description": "视频高度"}
             },
@@ -196,6 +272,24 @@ TOOLS = [
         }
     },
     {
+        "name": "add_filter",
+        "description": "Add a color filter over a time range on its own filter track",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filter_type": {"type": "string", "description": "Filter name (see get_filter_types); case, spaces and underscores are ignored"},
+                "draft_id": {"type": "string", "description": "Draft ID"},
+                "start": {"type": "number", "default": 0, "description": "Start time on the timeline (seconds)"},
+                "end": {"type": "number", "default": 3.0, "description": "End time on the timeline (seconds)"},
+                "intensity": {"type": "number", "default": 100.0, "description": "Filter strength 0-100 (only for filters marked adjustable)"},
+                "track_name": {"type": "string", "default": "filter_01", "description": "Filter track name"},
+                "width": {"type": "integer", "default": 1080, "description": "Canvas width"},
+                "height": {"type": "integer", "default": 1920, "description": "Canvas height"}
+            },
+            "required": ["filter_type"]
+        }
+    },
+    {
         "name": "add_sticker",
         "description": "添加贴纸到草稿",
         "inputSchema": {
@@ -211,6 +305,9 @@ TOOLS = [
                 "scale_y": {"type": "number", "default": 1.0, "description": "Y轴缩放"},
                 "alpha": {"type": "number", "default": 1.0, "description": "透明度"},
                 "rotation": {"type": "number", "default": 0.0, "description": "旋转角度"},
+                "flip_horizontal": {"type": "boolean", "default": False, "description": "Mirror horizontally"},
+                "flip_vertical": {"type": "boolean", "default": False, "description": "Mirror vertically"},
+                "relative_index": {"type": "integer", "default": 0, "description": "Track rendering order index"},
                 "track_name": {"type": "string", "default": "sticker_main", "description": "轨道名称"},
                 "width": {"type": "integer", "default": 1080, "description": "视频宽度"},
                 "height": {"type": "integer", "default": 1920, "description": "视频高度"}
@@ -283,7 +380,8 @@ _TYPE_LIST_TOOLS = {
     "get_font_types": ("/get_font_types", "List valid font names (use in add_text/add_subtitle font)"),
     "get_text_intro_types": ("/get_text_intro_types", "List valid text intro animation names"),
     "get_text_outro_types": ("/get_text_outro_types", "List valid text outro animation names"),
-    "get_text_loop_anim_types": ("/get_text_loop_anim_types", "List valid text loop animation names"),
+    "get_text_loop_anim_types": ("/get_text_loop_anim_types", "List valid text loop animation names (use in add_text loop_animation)"),
+    "get_filter_types": ("/get_filter_types", "List valid filter names (use in add_filter filter_type); adjustable=true means intensity has an effect"),
     "get_video_scene_effect_types": ("/get_video_scene_effect_types", "List valid scene effect names (use in add_effect with effect_category='scene')"),
     "get_video_character_effect_types": ("/get_video_character_effect_types", "List valid character effect names (use in add_effect with effect_category='character')"),
 }
@@ -468,6 +566,14 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 result = add_video_track(**arguments)
                 
             elif tool_name == "add_audio":
+                # Same shortcut as the /add_audio route: effect_type + effect_params -> sound_effects
+                effect_type = arguments.pop("effect_type", None)
+                effect_params = arguments.pop("effect_params", None)
+                if effect_type:
+                    arguments["sound_effects"] = list(arguments.get("sound_effects") or []) + [(effect_type, effect_params)]
+                if arguments.get("sound_effects"):
+                    arguments["sound_effects"] = [tuple(e) if isinstance(e, list) else e
+                                                  for e in arguments["sound_effects"]]
                 result = add_audio_track(**arguments)
                 
             elif tool_name == "add_image":
@@ -489,6 +595,9 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 arguments.setdefault("effect_category", "scene")
                 result = add_effect_impl(**arguments)
                 
+            elif tool_name == "add_filter":
+                result = add_filter_impl(**arguments)
+
             elif tool_name == "add_sticker":
                 result = add_sticker_impl(**arguments)
                 

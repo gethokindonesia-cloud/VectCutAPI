@@ -404,7 +404,7 @@ class Text_segment(Visual_segment):
         elif (isinstance(animation_type, Text_loop_anim) or isinstance(animation_type, CapCut_Text_loop_anim)):
             intro_trange = self.animations_instance and self.animations_instance.get_animation_trange("in")
             outro_trange = self.animations_instance and self.animations_instance.get_animation_trange("out")
-            start = intro_trange.start if intro_trange else 0
+            start = intro_trange.end if intro_trange else 0  # loop starts once the intro has finished
             duration = self.target_timerange.duration - start - (outro_trange.duration if outro_trange else 0)
         else:
             raise TypeError("Invalid animation type %s" % type(animation_type))

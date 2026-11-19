@@ -29,6 +29,8 @@ from add_image_impl import add_image_impl
 from add_video_keyframe_impl import add_video_keyframe_impl
 from save_draft_impl import save_draft_impl, query_task_status, query_script_impl
 from add_effect_impl import add_effect_impl
+from add_filter_impl import add_filter_impl
+from pyJianYingDraft.metadata.filter_meta import Filter_type
 from add_sticker_impl import add_sticker_impl
 from create_draft import create_draft
 from get_duration_impl import get_video_duration
@@ -418,6 +420,9 @@ def add_text():
     outro_animation = data.get('outro_animation')
     outro_duration = data.get('outro_duration', 0.5)
 
+    # Loop animation
+    loop_animation = data.get('loop_animation')
+
     # Multi-style text parameters
     text_styles_data = data.get('text_styles', [])
     text_styles = None
@@ -514,6 +519,7 @@ def add_text():
             intro_duration=intro_duration,
             outro_animation=outro_animation,
             outro_duration=outro_duration,
+            loop_animation=loop_animation,
             width=width,
             height=height,
             fixed_width=fixed_width,
@@ -732,6 +738,39 @@ def add_effect():
     except Exception as e:
         error_message = f"Error occurred while adding effect: {str(e)}. "
         result["error"] = error_message
+        return jsonify(result)
+
+@app.route('/add_filter', methods=['POST'])
+def add_filter():
+    data = request.get_json()
+
+    filter_type = data.get('filter_type')  # Filter name, see /get_filter_types
+    result = {
+        "success": False,
+        "output": "",
+        "error": ""
+    }
+
+    if not filter_type:
+        result["error"] = "Hi, the required parameters 'filter_type' are missing. Please add them and try again."
+        return jsonify(result)
+
+    try:
+        result["output"] = add_filter_impl(
+            filter_type=filter_type,
+            start=data.get('start', 0),
+            end=data.get('end', 3.0),
+            draft_id=data.get('draft_id'),
+            track_name=data.get('track_name', "filter_01"),
+            intensity=data.get('intensity', 100.0),
+            width=data.get('width', 1080),
+            height=data.get('height', 1920)
+        )
+        result["success"] = True
+        return jsonify(result)
+
+    except Exception as e:
+        result["error"] = f"Error occurred while adding filter: {str(e)}. "
         return jsonify(result)
 
 @app.route('/query_script', methods=['POST'])
@@ -1505,6 +1544,28 @@ def get_text_loop_anim_types():
     except Exception as e:
         result["success"] = False
         result["error"] = f"Error occurred while getting text loop animation types: {str(e)}"
+        return jsonify(result)
+
+
+@app.route('/get_filter_types', methods=['GET'])
+def get_filter_types():
+    """Return supported filter type list (the same list is used in JianYing and CapCut)"""
+    result = {
+        "success": True,
+        "output": "",
+        "error": ""
+    }
+
+    try:
+        result["output"] = [
+            {"name": name, "adjustable": bool(member.value.params)}
+            for name, member in Filter_type.__members__.items()
+        ]
+        return jsonify(result)
+
+    except Exception as e:
+        result["success"] = False
+        result["error"] = f"Error occurred while getting filter types: {str(e)}"
         return jsonify(result)
 
 

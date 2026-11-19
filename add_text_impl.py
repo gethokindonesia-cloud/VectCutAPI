@@ -49,6 +49,7 @@ def add_text_impl(
     intro_duration: float = 0.5,
     outro_animation: str | None = None,
     outro_duration: float = 0.5,
+    loop_animation: str | None = None,
     width: int = 1080,
     height: int = 1920,
     fixed_width: float = -1,  # Text fixed width ratio, default -1 means not fixed
@@ -101,6 +102,7 @@ def add_text_impl(
     :param intro_duration: Intro animation duration (seconds), default 0.5 seconds
     :param outro_animation: Outro animation type
     :param outro_duration: Outro animation duration (seconds), default 0.5 seconds
+    :param loop_animation: Loop animation type; fills the time between intro and outro
     :param width: Video width (pixels)
     :param height: Video height (pixels)
     :param fixed_width: Text fixed width ratio, range 0.0-1.0, default -1 means not fixed
@@ -279,6 +281,17 @@ def add_text_impl(
             text_segment.add_animation(animation_type, duration_microseconds)  # Add outro animation, set duration
         except:
             print(f"Warning: Unsupported outro animation type {outro_animation}, this parameter will be ignored")
+
+    # Add loop animation (must come after intro/outro so it fills the gap between them)
+    if loop_animation:
+        try:
+            if IS_CAPCUT_ENV:
+                animation_type = getattr(draft.CapCut_Text_loop_anim, loop_animation)
+            else:
+                animation_type = getattr(draft.Text_loop_anim, loop_animation)
+            text_segment.add_animation(animation_type)
+        except:
+            print(f"Warning: Unsupported loop animation type {loop_animation}, this parameter will be ignored")
 
     # Add text segment to track
     script.add_segment(text_segment, track_name=track_name)
