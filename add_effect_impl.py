@@ -5,6 +5,20 @@ from create_draft import get_or_create_draft
 from util import generate_draft_url
 from settings import IS_CAPCUT_ENV
 
+def resolve_video_effect(effect_type: str, effect_category: str = "scene"):
+    """Look up a scene/character video effect by name for the current environment (CapCut or JianYing)."""
+    if IS_CAPCUT_ENV:
+        enums = {"scene": CapCut_Video_scene_effect_type, "character": CapCut_Video_character_effect_type}
+    else:
+        enums = {"scene": Video_scene_effect_type, "character": Video_character_effect_type}
+    if effect_category not in enums:
+        raise ValueError(f"effect_category must be 'scene' or 'character', got {effect_category!r}")
+    try:
+        return enums[effect_category][effect_type]
+    except KeyError:
+        raise ValueError(f"Unknown {effect_category} effect type: {effect_type}")
+
+
 def add_effect_impl(
     effect_type: str,  # Changed to string type
     effect_category: Literal["scene", "character"],
@@ -41,34 +55,7 @@ def add_effect_impl(
     t_range = trange(f"{start}s", f"{duration}s")
 
     # Select the corresponding effect type based on effect category and environment
-    effect_enum = None
-    if IS_CAPCUT_ENV:
-        # If in CapCut environment, use CapCut effects
-        if effect_category == "scene":
-            try:
-                effect_enum = CapCut_Video_scene_effect_type[effect_type]
-            except:
-                effect_enum = None
-        elif effect_category == "character":
-            try:
-                effect_enum = CapCut_Video_character_effect_type[effect_type]
-            except:
-                effect_enum = None
-    else:
-        # Default to using JianYing effects
-        if effect_category == "scene":
-            try:
-                effect_enum = Video_scene_effect_type[effect_type]
-            except:
-                effect_enum = None
-        elif effect_category == "character":
-            try:
-                effect_enum = Video_character_effect_type[effect_type]
-            except:
-                effect_enum = None
-    
-    if effect_enum is None:
-        raise ValueError(f"Unknown {effect_category} effect type: {effect_type}")
+    effect_enum = resolve_video_effect(effect_type, effect_category)
 
     # Add effect track (only when track doesn't exist)
     if track_name is not None:

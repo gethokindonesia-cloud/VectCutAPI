@@ -291,6 +291,12 @@ def query_task_status(task_id: str):
 def save_draft_impl(draft_id: str, draft_folder: str = None, project_name: str = None, auto_deploy: bool = True) -> Dict[str, str]:
     """Start a background task to save the draft"""
     logger.info(f"Received save draft request: draft_id={draft_id}, draft_folder={draft_folder}, project_name={project_name}, auto_deploy={auto_deploy}")
+    from project_edit_impl import OPENED_PROJECTS
+    if draft_id in OPENED_PROJECTS:
+        # Deploying replaces the target folder wholesale and would drop the project's
+        # Resources/, subdrafts and other timelines; save_project copies them instead.
+        return {"success": False,
+                "error": f"Draft {draft_id} was opened from an existing project; use save_project to save it as a new project"}
     try:
         # Generate a unique task ID
         task_id = draft_id

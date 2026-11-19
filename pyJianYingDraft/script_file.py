@@ -792,10 +792,12 @@ class Script_file:
             `TypeError`: 轨道类型不正确
             `ValueError`: 文本模板片段的文本数量不匹配
         """
-        if not isinstance(track, ImportedTextTrack):
+        # load_template 导入的文本轨道是普通的 Track(track_type=text), 也允许替换
+        if not (isinstance(track, ImportedTextTrack) or getattr(track, "track_type", None) == Track_type.text):
             raise TypeError("指定的轨道(类型为 %s)不支持文本内容替换" % track.track_type)
-        if not 0 <= segment_index < len(track):
-            raise IndexError("片段下标 %d 超出 [0, %d) 的范围" % (segment_index, len(track)))
+        segment_count = len(track.segments)
+        if not 0 <= segment_index < segment_count:
+            raise IndexError("片段下标 %d 超出 [0, %d) 的范围" % (segment_index, segment_count))
 
         def __recalc_style_range(old_len: int, new_len: int, styles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             """调整字体样式分布"""

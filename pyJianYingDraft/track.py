@@ -152,8 +152,13 @@ class Track(Base_track, Generic[Seg_type]):
                 # 计算时间偏移量
                 offset_time = target_time - target_segment.target_timerange.start
                     
-                # 添加关键帧
-                target_segment.add_keyframe(property_enum, offset_time, float_value)
+                # 添加关键帧 (音频片段只支持音量关键帧, 且签名不同)
+                if isinstance(target_segment, Audio_segment):
+                    if property_type != 'volume':
+                        raise ValueError(f"音频片段只支持 volume 关键帧, 不支持 {property_type}")
+                    target_segment.add_keyframe(offset_time, float_value)
+                else:
+                    target_segment.add_keyframe(property_enum, offset_time, float_value)
                 print(f"成功添加关键帧: {property_type} 在 {time}s")
             except Exception as e:
                 print(f"添加关键帧失败: {str(e)}")

@@ -29,6 +29,11 @@ from add_image_impl import add_image_impl
 from add_video_keyframe_impl import add_video_keyframe_impl
 from save_draft_impl import save_draft_impl, query_task_status, query_script_impl
 from add_effect_impl import add_effect_impl
+from add_filter_impl import add_filter_impl
+from add_audio_keyframe_impl import add_audio_keyframe_impl
+from project_edit_impl import (open_project_impl, replace_text_impl, replace_material_impl,
+                               save_project_impl, resolve_content_file)
+from pyJianYingDraft.metadata.filter_meta import Filter_type
 from add_sticker_impl import add_sticker_impl
 from create_draft import create_draft
 from get_duration_impl import get_video_duration
@@ -43,6 +48,13 @@ app = Flask(__name__)
 app.register_blueprint(preview_bp)
 
  
+_SEGMENT_EXTRA_KEYS = ("background_color", "filter_type", "filter_intensity",
+                       "effect_type", "effect_category", "effect_params")
+
+def _segment_extras_args(data):
+    """Optional per-clip background color / filter / effect fields shared by /add_video and /add_image."""
+    return {k: data[k] for k in _SEGMENT_EXTRA_KEYS if data.get(k) is not None}
+
 @app.route('/add_video', methods=['POST'])
 def add_video():
     data = request.get_json()
@@ -123,7 +135,8 @@ def add_video():
             mask_invert=mask_invert,
             mask_rect_width=mask_rect_width,
             mask_round_corner=mask_round_corner,
-            background_blur=background_blur
+            background_blur=background_blur,
+            **_segment_extras_args(data)
         )
         
         broadcast_draft_update(draft_id=draft_id, action="add_video")
@@ -189,7 +202,9 @@ def add_audio():
             sound_effects=sound_effects,  # Add audio effect parameters
             width=width,
             height=height,
-            duration=duration  # Add duration parameter
+            duration=duration,  # Add duration parameter
+            fade_in=data.get('fade_in', 0.0),
+            fade_out=data.get('fade_out', 0.0)
         )
         
         result["success"] = True
@@ -418,6 +433,9 @@ def add_text():
     outro_animation = data.get('outro_animation')
     outro_duration = data.get('outro_duration', 0.5)
 
+    # Loop animation
+    loop_animation = data.get('loop_animation')
+
     # Multi-style text parameters
     text_styles_data = data.get('text_styles', [])
     text_styles = None
@@ -514,6 +532,7 @@ def add_text():
             intro_duration=intro_duration,
             outro_animation=outro_animation,
             outro_duration=outro_duration,
+            loop_animation=loop_animation,
             width=width,
             height=height,
             fixed_width=fixed_width,
@@ -626,7 +645,8 @@ def add_image():
             mask_invert=mask_invert,
             mask_rect_width=mask_rect_width,
             mask_round_corner=mask_round_corner,
-            background_blur=background_blur
+            background_blur=background_blur,
+            **_segment_extras_args(data)
         )
         
         result["success"] = True
@@ -734,6 +754,39 @@ def add_effect():
         result["error"] = error_message
         return jsonify(result)
 
+@app.route('/add_filter', methods=['POST'])
+def add_filter():
+    data = request.get_json()
+
+    filter_type = data.get('filter_type')  # Filter name, see /get_filter_types
+    result = {
+        "success": False,
+        "output": "",
+        "error": ""
+    }
+
+    if not filter_type:
+        result["error"] = "Hi, the required parameters 'filter_type' are missing. Please add them and try again."
+        return jsonify(result)
+
+    try:
+        result["output"] = add_filter_impl(
+            filter_type=filter_type,
+            start=data.get('start', 0),
+            end=data.get('end', 3.0),
+            draft_id=data.get('draft_id'),
+            track_name=data.get('track_name', "filter_01"),
+            intensity=data.get('intensity', 100.0),
+            width=data.get('width', 1080),
+            height=data.get('height', 1920)
+        )
+        result["success"] = True
+        return jsonify(result)
+
+    except Exception as e:
+        result["error"] = f"Error occurred while adding filter: {str(e)}. "
+        return jsonify(result)
+
 @app.route('/query_script', methods=['POST'])
 def query_script():
     data = request.get_json()
@@ -812,7 +865,10 @@ def save_draft():
     try:
         # Call save_draft_impl method
         draft_result = save_draft_impl(draft_id, draft_folder, project_name=project_name, auto_deploy=auto_deploy)
-        
+        if not draft_result.get("success", False):
+            result["error"] = draft_result.get("error", "save_draft failed")
+            return jsonify(result)
+
         # Broadcast live update to Web Preview Player
         broadcast_draft_update(draft_id=draft_id, action="save", project_name=project_name or draft_id)
 
@@ -879,15 +935,11 @@ def read_project():
     if not os.path.exists(target_dir):
         return jsonify({"success": False, "error": f"Project path does not exist: {target_dir}"})
 
-    content_file = os.path.join(target_dir, "draft_content.json")
-    timelines_dir = os.path.join(target_dir, "Timelines")
-    if os.path.exists(timelines_dir):
-        subdirs = [os.path.join(timelines_dir, d) for d in os.listdir(timelines_dir) if os.path.isdir(os.path.join(timelines_dir, d))]
-        if subdirs and os.path.exists(os.path.join(subdirs[0], "draft_content.json")):
-            content_file = os.path.join(subdirs[0], "draft_content.json")
-
-    if not os.path.exists(content_file):
-        return jsonify({"success": False, "error": f"draft_content.json not found in {target_dir}"})
+    try:
+        # Main timeline by default (root draft_content.json), or a named timeline
+        content_file = resolve_content_file(target_dir, data.get('timeline'))
+    except FileNotFoundError as e:
+        return jsonify({"success": False, "error": str(e)})
 
     try:
         with open(content_file, "r", encoding="utf-8") as f:
@@ -911,6 +963,37 @@ def read_project():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+def _json_route(func, required=()):
+    """Run func(**request JSON) and wrap the result in the usual {success, output, error} shape."""
+    data = request.get_json(silent=True) or {}
+    missing = [k for k in required if data.get(k) in (None, "")]
+    if missing:
+        return jsonify({"success": False, "output": "", "error": f"Missing required parameters: {missing}"})
+    try:
+        return jsonify({"success": True, "output": func(**data), "error": ""})
+    except Exception as e:
+        return jsonify({"success": False, "output": "", "error": str(e)})
+
+@app.route('/open_project', methods=['POST'])
+def open_project():
+    return _json_route(open_project_impl, ("project_name",))
+
+@app.route('/replace_text', methods=['POST'])
+def replace_text():
+    return _json_route(replace_text_impl, ("draft_id", "segment_index", "text"))
+
+@app.route('/replace_material', methods=['POST'])
+def replace_material():
+    return _json_route(replace_material_impl, ("draft_id", "material_name", "new_media"))
+
+@app.route('/save_project', methods=['POST'])
+def save_project():
+    return _json_route(save_project_impl, ("draft_id", "new_project_name"))
+
+@app.route('/add_audio_keyframe', methods=['POST'])
+def add_audio_keyframe():
+    return _json_route(add_audio_keyframe_impl, ("draft_id",))
 
 # Add new query status interface
 @app.route('/query_draft_status', methods=['POST'])
@@ -1505,6 +1588,28 @@ def get_text_loop_anim_types():
     except Exception as e:
         result["success"] = False
         result["error"] = f"Error occurred while getting text loop animation types: {str(e)}"
+        return jsonify(result)
+
+
+@app.route('/get_filter_types', methods=['GET'])
+def get_filter_types():
+    """Return supported filter type list (the same list is used in JianYing and CapCut)"""
+    result = {
+        "success": True,
+        "output": "",
+        "error": ""
+    }
+
+    try:
+        result["output"] = [
+            {"name": name, "adjustable": bool(member.value.params)}
+            for name, member in Filter_type.__members__.items()
+        ]
+        return jsonify(result)
+
+    except Exception as e:
+        result["success"] = False
+        result["error"] = f"Error occurred while getting filter types: {str(e)}"
         return jsonify(result)
 
 

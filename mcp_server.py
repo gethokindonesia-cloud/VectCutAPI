@@ -26,6 +26,7 @@ try:
     from add_subtitle_impl import add_subtitle_impl
     from add_effect_impl import add_effect_impl
     from add_sticker_impl import add_sticker_impl
+    from add_filter_impl import add_filter_impl
     from add_video_keyframe_impl import add_video_keyframe_impl
     from get_duration_impl import get_video_duration
     from save_draft_impl import save_draft_impl
@@ -71,7 +72,24 @@ TOOLS = [
                 "transition": {"type": "string", "description": "转场类型"},
                 "transition_duration": {"type": "number", "default": 0.5, "description": "转场时长"},
                 "mask_type": {"type": "string", "description": "蒙版类型"},
-                "background_blur": {"type": "integer", "description": "背景模糊级别(1-4)"}
+                "mask_center_x": {"type": "number", "default": 0.5, "description": "Mask center X (0-1)"},
+                "mask_center_y": {"type": "number", "default": 0.5, "description": "Mask center Y (0-1)"},
+                "mask_size": {"type": "number", "default": 1.0, "description": "Mask size (0-1)"},
+                "mask_rotation": {"type": "number", "default": 0.0, "description": "Mask rotation (degrees)"},
+                "mask_feather": {"type": "number", "default": 0.0, "description": "Mask feather (0-1)"},
+                "mask_invert": {"type": "boolean", "default": False, "description": "Invert the mask"},
+                "mask_rect_width": {"type": "number", "description": "Rectangle mask width as a proportion of material width (rectangle mask only)"},
+                "mask_round_corner": {"type": "number", "description": "Rectangle mask corner rounding, 0-100 (rectangle mask only)"},
+                "background_blur": {"type": "integer", "description": "背景模糊级别(1-4)"},
+                "background_color": {"type": "string", "description": "Solid background fill '#RRGGBB' or '#RRGGBBAA' (bottom video track only; not with background_blur)"},
+                "filter_type": {"type": "string", "description": "Filter applied to this clip only (see get_filter_types)"},
+                "filter_intensity": {"type": "number", "default": 100.0, "description": "Clip filter strength 0-100"},
+                "effect_type": {"type": "string", "description": "Video effect applied to this clip only (see get_video_scene_effect_types / get_video_character_effect_types)"},
+                "effect_category": {"type": "string", "enum": ["scene", "character"], "default": "scene", "description": "Category effect_type is looked up in"},
+                "effect_params": {"type": "array", "items": {"type": ["number", "null"]}, "description": "Clip effect parameter values"},
+                "relative_index": {"type": "integer", "default": 0, "description": "Track rendering order index"},
+                "duration": {"type": "number", "description": "Known source duration in seconds (skips duration detection)"},
+                "draft_folder": {"type": "string", "description": "Draft folder path (optional)"}
             },
             "required": ["video_url"]
         }
@@ -90,6 +108,13 @@ TOOLS = [
                 "volume": {"type": "number", "default": 1.0, "description": "音量"},
                 "speed": {"type": "number", "default": 1.0, "description": "播放速度"},
                 "track_name": {"type": "string", "default": "audio_main", "description": "轨道名称"},
+                "effect_type": {"type": "string", "description": "Audio effect name (see get_audio_effect_types)"},
+                "effect_params": {"type": "array", "items": {"type": ["number", "null"]}, "description": "Parameter values for effect_type, in the order listed by get_audio_effect_types"},
+                "sound_effects": {"type": "array", "description": "Several audio effects: list of [effect_name, [params...]] pairs"},
+                "fade_in": {"type": "number", "default": 0.0, "description": "Fade-in length (seconds)"},
+                "fade_out": {"type": "number", "default": 0.0, "description": "Fade-out length (seconds)"},
+                "duration": {"type": "number", "description": "Known source duration in seconds (skips duration detection)"},
+                "draft_folder": {"type": "string", "description": "Draft folder path (optional)"},
                 "width": {"type": "integer", "default": 1080, "description": "视频宽度"},
                 "height": {"type": "integer", "default": 1920, "description": "视频高度"}
             },
@@ -114,9 +139,33 @@ TOOLS = [
                 "scale_y": {"type": "number", "default": 1, "description": "Y轴缩放"},
                 "track_name": {"type": "string", "default": "main", "description": "轨道名称"},
                 "intro_animation": {"type": "string", "description": "入场动画"},
+                "intro_animation_duration": {"type": "number", "default": 0.5, "description": "Intro animation duration (seconds)"},
                 "outro_animation": {"type": "string", "description": "出场动画"},
+                "outro_animation_duration": {"type": "number", "default": 0.5, "description": "Outro animation duration (seconds)"},
+                "combo_animation": {"type": "string", "description": "Combo animation (see get_combo_animation_types)"},
+                "combo_animation_duration": {"type": "number", "default": 0.5, "description": "Combo animation duration (seconds)"},
+                "animation": {"type": "string", "description": "Legacy intro animation name (intro_animation takes priority)"},
+                "animation_duration": {"type": "number", "default": 0.5, "description": "Legacy intro animation duration (seconds)"},
                 "transition": {"type": "string", "description": "转场类型"},
-                "mask_type": {"type": "string", "description": "蒙版类型"}
+                "transition_duration": {"type": "number", "default": 0.5, "description": "Transition duration (seconds)"},
+                "mask_type": {"type": "string", "description": "蒙版类型"},
+                "mask_center_x": {"type": "number", "default": 0.0, "description": "Mask center X (material pixels; 0 = center)"},
+                "mask_center_y": {"type": "number", "default": 0.0, "description": "Mask center Y (material pixels; 0 = center)"},
+                "mask_size": {"type": "number", "default": 0.5, "description": "Mask size as a proportion of material height"},
+                "mask_rotation": {"type": "number", "default": 0.0, "description": "Mask rotation (degrees, clockwise)"},
+                "mask_feather": {"type": "number", "default": 0.0, "description": "Mask feather, 0-100"},
+                "mask_invert": {"type": "boolean", "default": False, "description": "Invert the mask"},
+                "mask_rect_width": {"type": "number", "description": "Rectangle mask width as a proportion of material width (rectangle mask only)"},
+                "mask_round_corner": {"type": "number", "description": "Rectangle mask corner rounding, 0-100 (rectangle mask only)"},
+                "background_blur": {"type": "integer", "description": "Background blur level 1-4"},
+                "background_color": {"type": "string", "description": "Solid background fill '#RRGGBB' or '#RRGGBBAA' (bottom video track only; not with background_blur)"},
+                "filter_type": {"type": "string", "description": "Filter applied to this clip only (see get_filter_types)"},
+                "filter_intensity": {"type": "number", "default": 100.0, "description": "Clip filter strength 0-100"},
+                "effect_type": {"type": "string", "description": "Video effect applied to this clip only (see get_video_scene_effect_types / get_video_character_effect_types)"},
+                "effect_category": {"type": "string", "enum": ["scene", "character"], "default": "scene", "description": "Category effect_type is looked up in"},
+                "effect_params": {"type": "array", "items": {"type": ["number", "null"]}, "description": "Clip effect parameter values"},
+                "relative_index": {"type": "integer", "default": 0, "description": "Track rendering order index"},
+                "draft_folder": {"type": "string", "description": "Draft folder path (optional)"}
             },
             "required": ["image_url"]
         }
@@ -131,18 +180,49 @@ TOOLS = [
                 "start": {"type": "number", "description": "开始时间（秒）"},
                 "end": {"type": "number", "description": "结束时间（秒）"},
                 "draft_id": {"type": "string", "description": "草稿ID"},
+                "track_name": {"type": "string", "default": "text_main", "description": "Track name"},
+                "transform_x": {"type": "number", "default": 0, "description": "X position"},
+                "transform_y": {"type": "number", "default": -0.8, "description": "Y position (-0.8 = near bottom)"},
+                "width": {"type": "integer", "default": 1080, "description": "Canvas width"},
+                "height": {"type": "integer", "default": 1920, "description": "Canvas height"},
+                "font": {"type": "string", "description": "Font name (see get_font_types)"},
                 "font_color": {"type": "string", "default": "#ffffff", "description": "字体颜色"},
-                "font_size": {"type": "integer", "default": 24, "description": "字体大小"},
+                "font_size": {"type": "number", "default": 8.0, "description": "字体大小"},
+                "font_alpha": {"type": "number", "default": 1.0, "description": "Text opacity (0-1)"},
+                "bold": {"type": "boolean", "default": False, "description": "Bold"},
+                "italic": {"type": "boolean", "default": False, "description": "Italic"},
+                "underline": {"type": "boolean", "default": False, "description": "Underline"},
+                "vertical": {"type": "boolean", "default": False, "description": "Vertical text"},
+                "align": {"type": "integer", "enum": [0, 1, 2], "default": 1, "description": "Alignment: 0 left, 1 center, 2 right"},
+                "line_spacing": {"type": "number", "default": 0.25, "description": "Line spacing"},
+                "letter_spacing": {"type": "number", "default": 0.0, "description": "Letter spacing"},
+                "fixed_width": {"type": "number", "default": -1, "description": "Fixed text box width ratio 0-1 (-1 = auto)"},
+                "fixed_height": {"type": "number", "default": -1, "description": "Fixed text box height ratio 0-1 (-1 = auto)"},
+                "border_color": {"type": "string", "default": "#000000", "description": "Outline color"},
+                "border_width": {"type": "number", "default": 0.0, "description": "Outline width (0 = none)"},
+                "border_alpha": {"type": "number", "default": 1.0, "description": "Outline opacity (0-1)"},
                 "shadow_enabled": {"type": "boolean", "default": False, "description": "是否启用文字阴影"},
                 "shadow_color": {"type": "string", "default": "#000000", "description": "阴影颜色"},
-                "shadow_alpha": {"type": "number", "default": 0.8, "description": "阴影透明度"},
-                "shadow_angle": {"type": "number", "default": 315.0, "description": "阴影角度"},
+                "shadow_alpha": {"type": "number", "default": 0.9, "description": "阴影透明度"},
+                "shadow_angle": {"type": "number", "default": -45.0, "description": "阴影角度"},
                 "shadow_distance": {"type": "number", "default": 5.0, "description": "阴影距离"},
-                "shadow_smoothing": {"type": "number", "default": 0.0, "description": "阴影平滑度"},
-                "background_color": {"type": "string", "description": "背景颜色"},
-                "background_alpha": {"type": "number", "default": 1.0, "description": "背景透明度"},
-                "background_style": {"type": "integer", "default": 0, "description": "背景样式"},
+                "shadow_smoothing": {"type": "number", "default": 0.15, "description": "阴影平滑度"},
+                "background_color": {"type": "string", "default": "#000000", "description": "背景颜色"},
+                "background_alpha": {"type": "number", "default": 0.0, "description": "背景透明度 (0 = no background)"},
+                "background_style": {"type": "integer", "default": 1, "description": "背景样式"},
                 "background_round_radius": {"type": "number", "default": 0.0, "description": "背景圆角半径"},
+                "background_width": {"type": "number", "default": 0.14, "description": "Background width"},
+                "background_height": {"type": "number", "default": 0.14, "description": "Background height"},
+                "background_horizontal_offset": {"type": "number", "default": 0.5, "description": "Background horizontal offset (0-1)"},
+                "background_vertical_offset": {"type": "number", "default": 0.5, "description": "Background vertical offset (0-1)"},
+                "intro_animation": {"type": "string", "description": "Text intro animation (see get_text_intro_types)"},
+                "intro_duration": {"type": "number", "default": 0.5, "description": "Intro animation duration (seconds)"},
+                "outro_animation": {"type": "string", "description": "Text outro animation (see get_text_outro_types)"},
+                "outro_duration": {"type": "number", "default": 0.5, "description": "Outro animation duration (seconds)"},
+                "loop_animation": {"type": "string", "description": "Text loop animation (see get_text_loop_anim_types); fills the time between intro and outro"},
+                "bubble_effect_id": {"type": "string", "description": "Text bubble effect ID (needs bubble_resource_id)"},
+                "bubble_resource_id": {"type": "string", "description": "Text bubble resource ID (needs bubble_effect_id)"},
+                "effect_effect_id": {"type": "string", "description": "Text effect (flower word) ID"},
                 "text_styles": {"type": "array", "description": "文本多样式配置列表"}
             },
             "required": ["text", "start", "end"]
@@ -166,10 +246,20 @@ TOOLS = [
                 "underline": {"type": "boolean", "default": False, "description": "是否下划线"},
                 "border_width": {"type": "number", "default": 0.0, "description": "边框宽度"},
                 "border_color": {"type": "string", "default": "#000000", "description": "边框颜色"},
+                "border_alpha": {"type": "number", "default": 1.0, "description": "Outline opacity (0-1)"},
                 "background_color": {"type": "string", "default": "#000000", "description": "背景颜色"},
                 "background_alpha": {"type": "number", "default": 0.0, "description": "背景透明度"},
+                "background_style": {"type": "integer", "default": 1, "description": "Background style"},
+                "bubble_effect_id": {"type": "string", "description": "Text bubble effect ID (needs bubble_resource_id)"},
+                "bubble_resource_id": {"type": "string", "description": "Text bubble resource ID (needs bubble_effect_id)"},
+                "effect_effect_id": {"type": "string", "description": "Text effect (flower word) ID"},
                 "transform_x": {"type": "number", "default": 0.0, "description": "X轴位置"},
                 "transform_y": {"type": "number", "default": -0.8, "description": "Y轴位置"},
+                "scale_x": {"type": "number", "default": 1.0, "description": "X scale"},
+                "scale_y": {"type": "number", "default": 1.0, "description": "Y scale"},
+                "rotation": {"type": "number", "default": 0.0, "description": "Rotation (degrees)"},
+                "alpha": {"type": "number", "default": 0.4, "description": "Subtitle opacity (0-1)"},
+                "vertical": {"type": "boolean", "default": True, "description": "Vertical text"},
                 "width": {"type": "integer", "default": 1080, "description": "视频宽度"},
                 "height": {"type": "integer", "default": 1920, "description": "视频高度"}
             },
@@ -196,6 +286,24 @@ TOOLS = [
         }
     },
     {
+        "name": "add_filter",
+        "description": "Add a color filter over a time range on its own filter track",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filter_type": {"type": "string", "description": "Filter name (see get_filter_types); case, spaces and underscores are ignored"},
+                "draft_id": {"type": "string", "description": "Draft ID"},
+                "start": {"type": "number", "default": 0, "description": "Start time on the timeline (seconds)"},
+                "end": {"type": "number", "default": 3.0, "description": "End time on the timeline (seconds)"},
+                "intensity": {"type": "number", "default": 100.0, "description": "Filter strength 0-100 (only for filters marked adjustable)"},
+                "track_name": {"type": "string", "default": "filter_01", "description": "Filter track name"},
+                "width": {"type": "integer", "default": 1080, "description": "Canvas width"},
+                "height": {"type": "integer", "default": 1920, "description": "Canvas height"}
+            },
+            "required": ["filter_type"]
+        }
+    },
+    {
         "name": "add_sticker",
         "description": "添加贴纸到草稿",
         "inputSchema": {
@@ -211,6 +319,9 @@ TOOLS = [
                 "scale_y": {"type": "number", "default": 1.0, "description": "Y轴缩放"},
                 "alpha": {"type": "number", "default": 1.0, "description": "透明度"},
                 "rotation": {"type": "number", "default": 0.0, "description": "旋转角度"},
+                "flip_horizontal": {"type": "boolean", "default": False, "description": "Mirror horizontally"},
+                "flip_vertical": {"type": "boolean", "default": False, "description": "Mirror vertically"},
+                "relative_index": {"type": "integer", "default": 0, "description": "Track rendering order index"},
                 "track_name": {"type": "string", "default": "sticker_main", "description": "轨道名称"},
                 "width": {"type": "integer", "default": 1080, "description": "视频宽度"},
                 "height": {"type": "integer", "default": 1920, "description": "视频高度"}
@@ -261,6 +372,232 @@ TOOLS = [
         }
     }
 ]
+
+# ---------------------------------------------------------------------------
+# Extra tools that proxy to the Flask routes in capcut_server.py
+# (called in-process via Flask's test client; no HTTP server needed)
+# ---------------------------------------------------------------------------
+
+_LIST_FILTER_PROPS = {
+    "search": {"type": "string", "description": "Only return names containing this text (case-insensitive)"},
+    "limit": {"type": "integer", "description": "Maximum number of items to return (default: all)"}
+}
+
+# tool name -> (route, http method, description)
+_TYPE_LIST_TOOLS = {
+    "get_intro_animation_types": ("/get_intro_animation_types", "List valid intro (entrance) animation names for video/image (use in add_image intro_animation)"),
+    "get_outro_animation_types": ("/get_outro_animation_types", "List valid outro (exit) animation names for video/image (use in add_image outro_animation)"),
+    "get_combo_animation_types": ("/get_combo_animation_types", "List valid combo (group) animation names for video/image"),
+    "get_transition_types": ("/get_transition_types", "List valid transition names (use in add_video/add_image transition)"),
+    "get_mask_types": ("/get_mask_types", "List valid mask names (use in add_video/add_image mask_type)"),
+    "get_audio_effect_types": ("/get_audio_effect_types", "List valid audio effect names with their parameters"),
+    "get_font_types": ("/get_font_types", "List valid font names (use in add_text/add_subtitle font)"),
+    "get_text_intro_types": ("/get_text_intro_types", "List valid text intro animation names"),
+    "get_text_outro_types": ("/get_text_outro_types", "List valid text outro animation names"),
+    "get_text_loop_anim_types": ("/get_text_loop_anim_types", "List valid text loop animation names (use in add_text loop_animation)"),
+    "get_filter_types": ("/get_filter_types", "List valid filter names (use in add_filter filter_type); adjustable=true means intensity has an effect"),
+    "get_video_scene_effect_types": ("/get_video_scene_effect_types", "List valid scene effect names (use in add_effect with effect_category='scene')"),
+    "get_video_character_effect_types": ("/get_video_character_effect_types", "List valid character effect names (use in add_effect with effect_category='character')"),
+}
+
+for _name, (_route, _desc) in _TYPE_LIST_TOOLS.items():
+    TOOLS.append({
+        "name": _name,
+        "description": _desc,
+        "inputSchema": {"type": "object", "properties": dict(_LIST_FILTER_PROPS)}
+    })
+
+TOOLS.extend([
+    {
+        "name": "query_script",
+        "description": "Return the full JSON content of a draft (tracks, segments, materials, timing)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID"},
+                "force_update": {"type": "boolean", "default": True, "description": "Recompute the script before returning it"}
+            },
+            "required": ["draft_id"]
+        }
+    },
+    {
+        "name": "query_draft_status",
+        "description": "Check the status of a draft save task",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "Task ID (usually the draft ID)"}
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "generate_draft_url",
+        "description": "Generate a preview/download URL for a draft",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID"},
+                "draft_folder": {"type": "string", "description": "Draft folder (optional)"}
+            },
+            "required": ["draft_id"]
+        }
+    },
+    {
+        "name": "list_projects",
+        "description": "List projects in the local CapCut desktop drafts folder, newest first",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "read_project",
+        "description": "Read a summary (duration, fps, canvas, tracks, materials) of an existing CapCut desktop project",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_name": {"type": "string", "description": "Project folder name (from list_projects) or absolute path"},
+                "timeline": {"type": "string", "description": "Timeline name or ID (default: main timeline)"}
+            },
+            "required": ["project_name"]
+        }
+    },
+    {
+        "name": "open_project",
+        "description": "Open an existing CapCut project for editing. Returns a draft_id that works with the add_* tools, replace_text and replace_material, plus its tracks, text segments and media names. Save the result with save_project (the original is never changed).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_name": {"type": "string", "description": "Project folder name (from list_projects) or absolute path"},
+                "timeline": {"type": "string", "description": "Timeline name or ID for multi-timeline projects (default: main timeline)"},
+                "include_texts": {"type": "boolean", "default": True, "description": "List text segments for replace_text"},
+                "text_limit": {"type": "integer", "default": 300, "description": "Maximum number of text segments to list"}
+            },
+            "required": ["project_name"]
+        }
+    },
+    {
+        "name": "replace_text",
+        "description": "Change the words of one text segment in a project opened with open_project, keeping its font, style and animation",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID from open_project"},
+                "track_index": {"type": "integer", "default": 0, "description": "Text track index (from open_project texts)"},
+                "segment_index": {"type": "integer", "description": "Segment index (from open_project texts)"},
+                "text": {"type": ["string", "array"], "description": "New text; for a text template, a list with one string per part"},
+                "recalc_style": {"type": "boolean", "default": True, "description": "Stretch per-character styles to the new length"}
+            },
+            "required": ["draft_id", "segment_index", "text"]
+        }
+    },
+    {
+        "name": "replace_material",
+        "description": "Swap a video, photo or audio file in a project opened with open_project, everywhere it is used. Clip lengths and trims stay the same, so use a file at least as long as the old one.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID from open_project"},
+                "material_name": {"type": "string", "description": "Current media name (from open_project video_materials / audio_materials)"},
+                "new_media": {"type": "string", "description": "Local file path or URL of the replacement"}
+            },
+            "required": ["draft_id", "material_name", "new_media"]
+        }
+    },
+    {
+        "name": "save_project",
+        "description": "Save a project opened with open_project as a NEW CapCut project (copies the original folder, then writes the edits). The original project is not modified.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID from open_project"},
+                "new_project_name": {"type": "string", "description": "Folder name for the new project; must not exist yet"}
+            },
+            "required": ["draft_id", "new_project_name"]
+        }
+    },
+    {
+        "name": "add_audio_keyframe",
+        "description": "Add volume keyframes to an audio track, e.g. lower music under a voice-over. Applied when the draft is saved.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "draft_id": {"type": "string", "description": "Draft ID"},
+                "track_name": {"type": "string", "default": "audio_main", "description": "Audio track name"},
+                "time": {"type": "number", "default": 0.0, "description": "Keyframe time on the timeline (seconds)"},
+                "volume": {"type": ["number", "string"], "default": 1.0, "description": "Volume at that time: 1.0 or \"100%\" = original, 0.3 = 30%, 0 = mute"},
+                "times": {"type": "array", "items": {"type": "number"}, "description": "Batch mode: list of times (seconds)"},
+                "volumes": {"type": "array", "items": {"type": ["number", "string"]}, "description": "Batch mode: list of volumes, same length as times"}
+            },
+            "required": ["draft_id"]
+        }
+    },
+    {
+        "name": "reload_desktop",
+        "description": "Ask CapCut desktop to reload so newly saved drafts appear",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_name": {"type": "string", "description": "Project to open after reload (optional)"}
+            }
+        }
+    },
+])
+
+# tool name -> (route, http method)
+_ROUTE_TOOLS = {name: (route, "GET") for name, (route, _d) in _TYPE_LIST_TOOLS.items()}
+_ROUTE_TOOLS.update({
+    "query_script": ("/query_script", "POST"),
+    "query_draft_status": ("/query_draft_status", "POST"),
+    "generate_draft_url": ("/generate_draft_url", "POST"),
+    "list_projects": ("/list_projects", "GET"),
+    "read_project": ("/read_project", "POST"),
+    "reload_desktop": ("/reload_desktop", "POST"),
+    "open_project": ("/open_project", "POST"),
+    "replace_text": ("/replace_text", "POST"),
+    "replace_material": ("/replace_material", "POST"),
+    "save_project": ("/save_project", "POST"),
+    "add_audio_keyframe": ("/add_audio_keyframe", "POST"),
+})
+
+_flask_client = None
+
+def _call_route(tool_name: str, arguments: Dict[str, Any]) -> Any:
+    """Call a capcut_server.py Flask route in-process and return its output."""
+    global _flask_client
+    if _flask_client is None:
+        from capcut_server import app as flask_app  # lazy: heavy import
+        _flask_client = flask_app.test_client()
+
+    route, method = _ROUTE_TOOLS[tool_name]
+    args = dict(arguments)
+    search = args.pop("search", None)
+    limit = args.pop("limit", None)
+
+    if method == "GET":
+        resp = _flask_client.get(route)
+    else:
+        resp = _flask_client.post(route, json=args)
+    data = resp.get_json(silent=True)
+    if data is None:
+        raise RuntimeError(f"{route} returned HTTP {resp.status_code} with non-JSON body")
+    if not data.get("success", False):
+        raise RuntimeError(data.get("error") or f"{route} failed")
+
+    output = data.get("output")
+    if tool_name == "query_script" and isinstance(output, str):
+        try:
+            output = json.loads(output)
+        except ValueError:
+            pass
+    if isinstance(output, list):
+        if search:
+            needle = search.lower()
+            output = [o for o in output
+                      if needle in str(o.get("name", o) if isinstance(o, dict) else o).lower()]
+        total = len(output)
+        if limit:
+            output = output[:int(limit)]
+        return {"total": total, "returned": len(output), "items": output}
+    return output
 
 @contextlib.contextmanager
 def capture_stdout():
@@ -319,6 +656,14 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 result = add_video_track(**arguments)
                 
             elif tool_name == "add_audio":
+                # Same shortcut as the /add_audio route: effect_type + effect_params -> sound_effects
+                effect_type = arguments.pop("effect_type", None)
+                effect_params = arguments.pop("effect_params", None)
+                if effect_type:
+                    arguments["sound_effects"] = list(arguments.get("sound_effects") or []) + [(effect_type, effect_params)]
+                if arguments.get("sound_effects"):
+                    arguments["sound_effects"] = [tuple(e) if isinstance(e, list) else e
+                                                  for e in arguments["sound_effects"]]
                 result = add_audio_track(**arguments)
                 
             elif tool_name == "add_image":
@@ -340,6 +685,9 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 arguments.setdefault("effect_category", "scene")
                 result = add_effect_impl(**arguments)
                 
+            elif tool_name == "add_filter":
+                result = add_filter_impl(**arguments)
+
             elif tool_name == "add_sticker":
                 result = add_sticker_impl(**arguments)
                 
@@ -352,11 +700,16 @@ def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 
             elif tool_name == "save_draft":
                 save_result = save_draft_impl(**arguments)
+                if isinstance(save_result, dict) and save_result.get("success") is False:
+                    raise RuntimeError(save_result.get("error") or "save_draft failed")
                 if isinstance(save_result, dict) and "draft_url" in save_result:
                     result = {"draft_url": save_result["draft_url"]}
                 else:
                     result = {"draft_url": f"https://www.install-ai-guider.top/draft/downloader?draft_id=unknown"}
-                
+
+            elif tool_name in _ROUTE_TOOLS:
+                result = _call_route(tool_name, arguments)
+
             else:
                 return {"success": False, "error": f"Unknown tool: {tool_name}"}
         
@@ -452,7 +805,7 @@ def main():
     """主函数"""
     print("🚀 Starting CapCut API MCP Server (Complete Version)...", file=sys.stderr)
     print(f"📋 Available tools: {len(TOOLS)} tools loaded", file=sys.stderr)
-    print("✨ Features: 视频、音频、图片、文本、字幕、特效、贴纸、关键帧", file=sys.stderr)
+    print("✨ Features: 视频、音频、图片、文本、字幕、特效、贴纸、关键帧、类型列表、项目管理", file=sys.stderr)
     print("🔌 Waiting for client connections...", file=sys.stderr)
     
     try:
